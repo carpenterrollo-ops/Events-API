@@ -40,3 +40,25 @@ jobs:
           echo "Health-Check nach 3 Versuchen fehlgeschlagen!"
           docker logs events-api
           exit 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest requests
+
+      - name: Run test suite against container
+        run: |
+          pytest -v
+
+      - name: Cleanup Container
+        if: always()
+        run: |
+          echo "Stoppe und entferne den Container..."
+          docker rm -f events-api || true
