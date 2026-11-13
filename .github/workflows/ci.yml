@@ -19,11 +19,11 @@ jobs:
 
       - name: Build Docker Image
         run: |
-          docker build -t events-api:ci .
+          docker build -t events-api:latest .
 
       - name: Start Container
         run: |
-          docker run -d -p 5000:5000 --name events-api events-api:ci
+          docker run -d -p 5000:5000 --name events-api events-api:latest
 
       - name: Health Check (API ready)
         run: |
@@ -62,3 +62,41 @@ jobs:
         run: |
           echo "Stoppe und entferne den Container..."
           docker rm -f events-api || true
+
+  deploy:
+    name: Deploy to Production
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and Push Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/events-api:latest
+
+      - name: Trigger Render Deployment
+        run: |
+          echo "Triggering Render Deploy Hook..."
+          curl -f -s -X POST "${{ secrets.RENDER_DEPLOY_HOOK }}"
+          echo -e "\nRender deployment triggered successfully."
+
+      - name: Wait for Render Deployment
+        run: |
+          echo "Warte 60 Sekunden, bis Render das Image gepullt und den Container gestartet hat..."
+          sleep 60
