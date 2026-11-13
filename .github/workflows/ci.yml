@@ -96,7 +96,44 @@ jobs:
           curl -f -s -X POST "${{ secrets.RENDER_DEPLOY_HOOK }}"
           echo -e "\nRender deployment triggered successfully."
 
-      - name: Wait for Render Deployment
+      - name: Wait for Render Deployment Initialization
         run: |
-          echo "Warte 60 Sekunden, bis Render das Image gepullt und den Container gestartet hat..."
-          sleep 60
+          echo "Warte 30 Sekunden, bis Render das Deployment initialisiert..."
+          sleep 30
+
+      - name: Run Smoke Tests against Live API
+        env:
+          RENDER_BASE_URL: ${{ secrets.RENDER_BASE_URL }}
+        run: |
+          BASE_URL="${RENDER_BASE_URL%/}"
+          echo "Target Base URL: ${BASE_URL}"
+
+          echo "=== 1. Health-Check aufrufen (${BASE_URL}/api/health) ==="
+          HEALTHY=false
+          for i in {1..12}; do
+            echo "Versuch $i von 12..."
+            HTTP_CODE=$(curl -s -o /tmp/health_response.json -w "%{http_code}" "${BASE_URL}/api/health" || echo "000")
+            echo "HTTP Status: $HTTP_CODE"
+            if [ "$HTTP_CODE" -eq 200 ]; then
+              echo "Antwort: $(cat /tmp/health_response.json)"
+              HEALTHY=true
+              break
+            fi
+            echo "API noch nicht bereit (HTTP $HTTP_CODE). Warte 10 Sekunden..."
+            sleep 10
+          done
+
+          if [ "$HEALTHY" != "true" ]; then
+            echo "FEHLER: Health-Check nach 12 Versuchen fehlgeschlagen!"
+            exit 1
+          fi
+
+          echo -e "\n=== 2. Read-Endpunkt aufrufen (${BASE_URL}/api/events) ==="
+          EVENTS_HTTP_CODE=$(curl -s -o /tmp/events_response.json -w "%{http_code}" "${BASE_URL}/api/events" || echo "000")
+          echo "HTTP Status: $EVENTS_HTTP_CODE"
+          if [ "$EVENTS_HTTP_CODE" -ne 200 ]; then
+            echo "FEHLER: Events-Endpunkt lieferte unerwarteten Statuscode: $EVENTS_HTTP_CODE"
+            exit 1
+          fi
+          echo "Events-Endpunkt erfolgreich erreichbar!"
+          echo "Smoke-Test erfolgreich abgeschlossen."
